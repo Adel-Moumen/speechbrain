@@ -4,6 +4,8 @@ from torch import Tensor
 from typing import Optional
 from core_rnn.cuda_ligru_cell import _ligru_cell_cupy
 
+FLAG = False
+
 class LiGRU(torch.nn.Module):
     """ This function implements a Light GRU (liGRU).
     LiGRU is single-gate GRU model based on batch-norm + relu
@@ -53,7 +55,7 @@ class LiGRU(torch.nn.Module):
         self,
         hidden_size,
         input_shape,
-        nonlinearity="relu",
+        nonlinearity="sin",
         normalization="batchnorm",
         num_layers=1,
         bias=True,
@@ -121,9 +123,9 @@ class LiGRU(torch.nn.Module):
                 x = x.reshape(x.shape[0], x.shape[1], x.shape[2] * x.shape[3])
 
         # run ligru
-        output, hh, at = self._forward_ligru(x, hx=hx)
+        output, hh = self._forward_ligru(x, hx=hx)
 
-        return output, hh, at
+        return output, hh
 
     def _forward_ligru(self, x, hx: Optional[Tensor]):
         """Returns the output of the vanilla liGRU.
@@ -142,9 +144,9 @@ class LiGRU(torch.nn.Module):
         # Processing the different layers
         for i, ligru_lay in enumerate(self.rnn):
             if hx is not None:
-                x, at = ligru_lay(x, hx=hx[i])
+                x = ligru_lay(x, hx=hx[i])
             else:
-                x, at = ligru_lay(x, hx=None)
+                x = ligru_lay(x, hx=None)
             h.append(x[:, -1, :])
         h = torch.stack(h, dim=1)
 
@@ -153,7 +155,7 @@ class LiGRU(torch.nn.Module):
         else:
             h = h.transpose(0, 1)
 
-        return x, h, at
+        return x, h
 
     def lambda_value(self):
         lmb = 0
@@ -278,20 +280,26 @@ class LiGRU_Layer(torch.nn.Module):
         #ht_max = h[:, :-1].max() 
         #self.lambda_regu = self._get_lambda(ht_max, self.u.weight, at)
 
+        if FLAG == True:
+            self.set_lambda(h, self.u.weight, at)
+
         if self.bidirectional:
             h_f, h_b = h.chunk(2, dim=0)
             h_b = h_b.flip(1)
             h = torch.cat([h_f, h_b], dim=2)
 
-        return h, at
+        return h
 
-    def _get_lambda(self, ht_max, u, at):
+    def set_lambda(self, h, u, at):
+        ht_max = h[:, :-1].max()
         uz, uh = u.chunk(2, 0)
         
         sz = torch.linalg.matrix_norm(uz, ord=2)   
         sh = torch.linalg.matrix_norm(uh, ord=2)
+        
+        self.lambda_regu = torch.cos(at).max() * sh + sz * ht_max / 4
 
-        return torch.cos(at).max() * sh + sz * ht_max / 4
+        
 
     def _ligru_cell_cpu(self, w, ht, drop_mask):
         """Returns the hidden states for each time step.
@@ -411,7 +419,10 @@ def rnn_init(module):
 if __name__ == "__main__" :
     torch.manual_seed(42)
     inp_tensor = torch.rand([4, 1000, 2])
+    FLAG = True
     net = LiGRU(input_shape=inp_tensor.shape, hidden_size=128, num_layers=10)
-    out_tensor, _, _= net(inp_tensor) 
+    out_tensor, _= net(inp_tensor) 
+
+    print(out_tensor)
 
     print(net.lambda_value())
