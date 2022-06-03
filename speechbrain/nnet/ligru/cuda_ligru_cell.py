@@ -41,6 +41,10 @@ _preamble_gradient_tanh = '''
 template <typename T> __device__ T gradient_activation_hcand(T x) { return 1 - x * x; }
 '''
 
+_preamble_gradient_sin = """
+template <typename T> __device__ T gradient_activation_hcand(T x) { return cos(x); }
+"""
+
 def transform_tensor_to_cupy(x):
     """Transform a PyTorch Tensor located on device="cuda" to a CuPy array. 
     
@@ -51,68 +55,114 @@ def transform_tensor_to_cupy(x):
     return cp.ascontiguousarray(cp.from_dlpack(torch.utils.dlpack.to_dlpack(x.detach())))
 
 
-class _ligru_cell_cupy(autograd.Function):
-    """This class redefines the forward of a LiGRU cell and implement the backward using CuPy. 
-    By doing so, we speed up the training by a factor of ~4x in comparison to the original implementation
-    and ~2.5x in comparison to the jitted version. 
+class Sin(torch.nn.Module):
+    """ Wrapper around Sin function because of JIT behaviours.
+    """
+    def __init__(self):
+        super(Sin, self).__init__()
+        
+    def forward(self, x):
+        return torch.sin(x)
+
+
+class _ligru_cell_jit(torch.nn.Module):
+    """This class redefines the forward of a LiGRU cell.
     """
 
-    @staticmethod
-    def forward(ctx, wx, u, ht, drop_mask, act):
-        """Compute the hidden states over each timestep and save the intermediate results for the backward.
+    def __init__(self, act):
+        super(_ligru_cell_jit, self).__init__()
+        if act == "sin":
+            self.act = Sin()
+        elif act == "leaky_relu":
+            self.act = torch.nn.LeakyReLU()
+        elif act == "tanh":
+            self.act = torch.nn.Tanh()
+        else:
+            self.act = torch.nn.ReLU()
 
-        The utilisation of Tanh in the LiGRU cell is not recommended because it increases the instability and can lead to 
-        nan values in the gradients.
         
-        The forward has not been implemented with CuPy because it was leading to numerical instabilities. 
-
+    def forward(self, wx, u, ht, drop_mask):
+        """Compute the forward pass of a LiGRU cell.
         Arguments
         ---------
         wx : torch.Tensor
-            Linearly transformed input. 
+            Linearly transformed input.
         u  : torch.Tensor
-            Recurrent weight. 
+            Recurrent weight.
         ht : torch.Tensor
-            Hidden state. 
+            Hidden state.
         drop_mask : torch.Tensor
-            Dropout mask. 
+            Dropout mask.
         act : nn.Module
-            Activation Function. 
-            Only three possibilities for now:
-                1) ReLU,
-                2) Leaky ReLU with slope_parameter of 1e-2 (default parameter of PyTorch),
-                3) Tanh. 
+            Activation Function.
         """
-        
         # save values for backward
-        hiddens        = []
+        hiddens = []
         candidate_gate = []
-        update_gate    = []
-        save_at        = []
-        h_init         = ht
-
+        update_gate = []
+        save_at = []
+        
         # iterate over each timesteps
         for k in range(wx.shape[1]):
-            
-            gates  = wx[:, k] + ht @ u.T
+
+            gates = wx[:, k] + ht @ u.T
             at, zt = gates.chunk(2, 1)
-            zt     = torch.sigmoid(zt)
-            hcand  = act(at) * drop_mask
-            ht     = ht * zt + (1 - zt) * hcand
+            zt = torch.sigmoid(zt)
+
+            hcand = self.act(at) * drop_mask 
+            ht = ht * zt + (1 - zt) * hcand
 
             hiddens.append(ht)
             candidate_gate.append(hcand)
             update_gate.append(zt)
             save_at.append(at)
-        
+
         # stacks values
-        ht    = torch.stack(hiddens, dim=1) 
-        zt    = torch.stack(update_gate, dim=1)
-        at    = torch.stack(save_at, dim=1)
+        ht = torch.stack(hiddens, dim=1)
+        
+        zt = torch.stack(update_gate, dim=1)
+        at = torch.stack(save_at, dim=1)
         hcand = torch.stack(candidate_gate, dim=1)
 
+        return ht, zt, at, hcand
+
+class _ligru_cell_cupy(autograd.Function):
+    """This class uses the jitted forward of a ligru cell and implement the backward using CuPy.
+    By doing so, we speed up the training by a factor of ~4.7x in comparison to the original implementation
+    and ~3x in comparison to the jitted version.
+    """
+
+    @staticmethod
+    def forward(ctx, cell_jit, wx, u, ht, drop_mask):
+        """Compute the hidden states over each timestep and save the intermediate results for the backward.
+        The utilisation of Tanh in the LiGRU cell is not recommended because it increases the instability and can lead to
+        nan values in the gradients.
+        The forward has not been implemented with CuPy because it was leading to numerical instabilities.
+        Arguments
+        ---------
+        cell_jit : _ligru_cell_jit object
+            Jitted nn.Module
+        wx : torch.Tensor
+            Linearly transformed input.
+        u  : torch.Tensor
+            Recurrent weight.
+        ht : torch.Tensor
+            Hidden state.
+        drop_mask : torch.Tensor
+            Dropout mask.
+        act : nn.Module
+            Activation Function.
+            Only three possibilities for now:
+                1) ReLU,
+                2) Leaky ReLU with slope_parameter of 1e-2 (default parameter of PyTorch),
+                3) Tanh.
+        """
+        h_init = ht
+
+        ht, zt, at, hcand = cell_jit(wx, u, h_init, drop_mask)
+
         ctx.save_for_backward(h_init, u, wx, zt, at, ht, hcand, drop_mask)
-        ctx.activation_function = act
+        ctx.activation_function = cell_jit.act
 
         return ht
 
@@ -146,12 +196,14 @@ class _ligru_cell_cupy(autograd.Function):
 
         # find the activation function and load the appropriate preamble 
         activation_function_name = activation_function.__class__.__name__
-        if activation_function_name  == "LeakyReLU":
-            preamble_gradient = _preamble_gradient_leaky_relu    
-        elif activation_function_name  == "tanh":
-            preamble_gradient = _preamble_gradient_tanh    
-        else:
+        if activation_function_name == "LeakyReLU":
+            preamble_gradient = _preamble_gradient_leaky_relu
+        elif activation_function_name == "Tanh":
+            preamble_gradient = _preamble_gradient_tanh
+        elif activation_function_name == "ReLU":
             preamble_gradient = _preamble_gradient_relu
+        else:
+            preamble_gradient = _preamble_gradient_sin
 
         _ligru_cell_backward_kernel = cp.ElementwiseKernel(
             'T grad_out, T dh_prev, T zt, T at, T drop_mask, T ht, T hcand',
