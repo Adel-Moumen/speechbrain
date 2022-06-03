@@ -71,10 +71,17 @@ In particular, our best model is based on an ECAPA-TDNN trained with the [voxlin
 - Multiple sophisticated enhancement losses, including differentiable STOI loss, MetricGAN, and mimic loss.
 - State-of-the-art performance on speech separation with Conv-TasNet, DualPath RNN, and SepFormer.
 
+### Self-Supervised Learning of Speech Representations
+- Recipes for wav2vec 2.0 pre-training with multiple GPUs compatible with HuggingFace models.
+
 ### Multi-microphone processing
 Combining multiple microphones is a powerful approach to achieve robustness in adverse acoustic environments:
 - Delay-and-sum, MVDR, and GeV beamforming.
 - Speaker localization.
+
+### Text-to-Speech (TTS) and Vocoders
+- Recipes for training TTS systems such as [Tacotron2](https://github.com/speechbrain/speechbrain/tree/develop/recipes/LJSpeech) with LJSpeech.
+- Recipes for training Vocoders such as [HiFIGAN](https://github.com/speechbrain/speechbrain/tree/develop/recipes/LJSpeech).
 
 ### Performance
 The recipes released with speechbrain implement speech processing systems with competitive or state-of-the-art performance. In the following, we report the best performance achieved on some popular benchmarks:
