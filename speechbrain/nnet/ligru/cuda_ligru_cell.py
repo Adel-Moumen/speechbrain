@@ -164,10 +164,10 @@ class _ligru_cell_cupy(autograd.Function):
         ctx.save_for_backward(h_init, u, wx, zt, at, ht, hcand, drop_mask)
         ctx.activation_function = cell_jit.act
 
-        return ht
+        return ht, at
 
     @staticmethod
-    def backward(ctx, grad_out):
+    def backward(ctx, grad_out, _):
         """Run the backward phase of the forward call defined above. This implementation
         is dependant of CuPy. 
 
