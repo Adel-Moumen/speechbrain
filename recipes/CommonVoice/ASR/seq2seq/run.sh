@@ -3,7 +3,7 @@
 #SBATCH --ntasks=1
 #SBATCH --partition=gpu
 #SBATCH --cpus-per-task=8
-#SBATCH --gpus-per-node=tesla_v100-sxm2-32gb:2
+#SBATCH --gpus-per-node=rtx_3090:2
 #SBATCH --mem=12G
 #SBATCH --time=192:00:00
 
