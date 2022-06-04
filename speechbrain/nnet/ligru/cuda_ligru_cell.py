@@ -241,5 +241,5 @@ class _ligru_cell_cupy(autograd.Function):
             dh_prev = dh_prev + dwx[:, t].dot(u)
             du     += dwx[:, t].T.dot(ht_)   
 
-        return torch.from_dlpack(dwx), torch.from_dlpack(du), torch.from_dlpack(dh), None, None
+        return None, torch.from_dlpack(dwx), torch.from_dlpack(du), torch.from_dlpack(dh), None, None
 
