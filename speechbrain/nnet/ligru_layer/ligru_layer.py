@@ -1,7 +1,7 @@
 import torch
 from torch.utils.cpp_extension import load
 
-ligru_cell = load("ligru_cell", sources=["src/nnet/ligru_layer/ligru_layer.cpp"], verbose=True)
+ligru_cell = load("ligru_cell", sources=["speechbrain/nnet/ligru_layer/ligru_layer.cpp"], verbose=True)
 
 
 class LayerNormCustom(torch.autograd.Function):

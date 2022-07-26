@@ -57,7 +57,7 @@ ligru_layer_forward(torch::Tensor wx,        // [B, T, H * 2]
   auto ht = h_init;
   std::vector<torch::Tensor> hiddens; 
   for (int t = 0; t < seq_length; ++t) {
-    hiddens.push_back(ht)
+    hiddens.push_back(ht);
     std::tie(ht_next, gates) = ligru_cell_forward(wx.select(1, t).contiguous(), ht, u, drop_mask);
     ht = ht_next;
   }
