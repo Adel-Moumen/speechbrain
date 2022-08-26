@@ -19,6 +19,18 @@ class ForwardPass {
 
         ~ForwardPass();
 
+        void Iterate(
+        const T* w,
+        const T* u,
+        const T* x,
+        const T* h,
+        T* h_out,
+        T* v,
+        T* tmp_Wx,
+        T* tmp_Rh,
+        const T* drop_mask);
+
+
     private:
 
         struct private_data;

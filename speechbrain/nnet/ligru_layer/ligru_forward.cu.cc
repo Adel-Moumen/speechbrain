@@ -57,4 +57,44 @@ ForwardPass<T>::~ForwardPass() {
   delete data_;
 }
 
+template<typename T>
+void ForwardPass<T>::Iterate(
+    const T* w,
+    const T* u,
+    const T* x,
+    const T* h,
+    T* h_out,
+    T* v,
+    T* tmp_wx,
+    T* tmp_rh,
+    const T* drop_mask) {
+  static const T alpha = static_cast<T>(1.0);
+  static const T beta = static_cast<T>(0.0);
+
+  const blas<void>::set_pointer_mode scoped1(data_->blas_handle);
+
+  const int batch_size = data_->batch_size;
+  const int input_size = data_->input_size;
+  const int hidden_size = data_->hidden_size;
+  const cublasHandle_t blas_handle = data_->blas_handle;
+  const cudaStream_t stream2 = data_->stream[1];
+  const cudaEvent_t event = data_->event;
+
+  cudaStream_t save_stream;
+  cublasGetStream(blas_handle, &save_stream);
+
+  cublasSetStream(blas_handle, stream2);
+  blas<T>::gemm(blas_handle,
+      CUBLAS_OP_N, CUBLAS_OP_N,
+      hidden_size * 2, batch_size, input_size,
+      &alpha,
+      w, hidden_size * 2,
+      x, input_size,
+      &beta,
+      tmp_wx, hidden_size * 2);
+  cudaEventRecord(event, stream2);
+
+  cublasSetStream(blas_handle, save_stream);
+}
+
 }
