@@ -59,9 +59,9 @@ ForwardPass<T>::~ForwardPass() {
 
 template<typename T>
 void ForwardPass<T>::Iterate(
-    const T* w,
-    const T* u,
-    const T* x,
+    const T* w, 
+    const T* u, 
+    const T* x, 
     const T* h,
     T* h_out,
     T* v,

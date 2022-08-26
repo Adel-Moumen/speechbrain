@@ -19,12 +19,35 @@
 #include <vector>
 
 #include "ligru.h"
+#include "support.h"
 
 namespace {
 
 using torch::Tensor;
 
-int ligru_backward() {
+int ligru_forward(
+    Tensor w, 
+    Tensor u, 
+    Tensor x, 
+    Tensor h,
+    Tensor drop_mask
+) {
+
+  CHECK_INPUT(w);
+  CHECK_INPUT(u);
+  CHECK_INPUT(x);
+  CHECK_INPUT(h);
+  CHECK_INPUT(drop_mask);
+
+  const auto batch_size = x.size(0);
+  const auto time_steps = x.size(1);
+  const auto input_size = x.size(2);
+  const auto hidden_size = u.size(0);
+  
+  
+  AT_DISPATCH_FLOATING_TYPES(x.scalar_type(), "ligru_forward", ([&] {
+
+  }));
 
   return 0;
 }
@@ -32,5 +55,5 @@ int ligru_backward() {
 }  // anonymous namespace
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-  m.def("backward", &ligru_backward, "LiGRU backward");
+  m.def("forward", &ligru_forward, "LiGRU forward");
 }
