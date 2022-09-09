@@ -154,6 +154,7 @@ class HuggingFaceWav2Vec2(nn.Module):
         """
 
         is_sb, ckpt_file = self._check_model_source(source)
+        print(is_sb)
         if is_sb:
             config = config.from_pretrained(source, cache_dir=save_path)
             self.model = model(config)
@@ -211,11 +212,11 @@ class HuggingFaceWav2Vec2(nn.Module):
         source = pathlib.Path(path)
         is_local = True
         is_sb = True
-
+        print(source)
         # If path is a huggingface hub.
         if not source.exists():
             is_local = False
-
+        print("is_local = ", is_local)
         if is_local:
             # Test for HuggingFace model
             if any(File.endswith(".bin") for File in os.listdir(path)):
@@ -235,11 +236,12 @@ class HuggingFaceWav2Vec2(nn.Module):
 
             # Test if it's an HuggingFace model or a SB one
             for File in files:
+                print(File)
                 if File.rfilename.endswith(".ckpt"):
+                    print("IS_SB")
                     checkpoint_filename = File.rfilename
                     is_sb = True
                     return is_sb, checkpoint_filename
-
             for File in files:
                 if File.rfilename.endswith(".bin"):
                     checkpoint_filename = File.rfilename
