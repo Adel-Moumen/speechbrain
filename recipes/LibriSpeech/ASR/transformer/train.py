@@ -42,6 +42,7 @@ from pathlib import Path
 import speechbrain as sb
 from hyperpyyaml import load_hyperpyyaml
 from speechbrain.utils.distributed import run_on_main
+from speechbrain.utils.data_utils import undo_padding
 
 logger = logging.getLogger(__name__)
 
@@ -88,17 +89,26 @@ class ASR(sb.core.Brain):
 
         # Compute outputs
         hyps = None
-        if stage == sb.Stage.TRAIN:
-            hyps = None
-        elif stage == sb.Stage.VALID:
-            hyps = None
-            current_epoch = self.hparams.epoch_counter.current
-            if current_epoch % self.hparams.valid_search_interval == 0:
-                # for the sake of efficiency, we only perform beamsearch with limited capacity
-                # and no LM to give user some idea of how the AM is doing
-                hyps, _ = self.hparams.valid_search(enc_out.detach(), wav_lens)
-        elif stage == sb.Stage.TEST:
-            hyps, _ = self.hparams.test_search(enc_out.detach(), wav_lens)
+        current_epoch = self.hparams.epoch_counter.current
+        is_valid_search = (
+            stage == sb.Stage.VALID
+            and current_epoch % self.hparams.valid_search_every == 0
+        )
+        is_test_search = stage == sb.Stage.TEST
+
+        if any([is_valid_search, is_test_search]):
+            # Note: For valid_search, for the sake of efficiency, we only perform beamsearch with
+            # limited capacity and no LM to give user some idea of how the AM is doing
+
+            # Decide searcher for inference: valid or test search
+            search = getattr(self.hparams, f"{stage.name}_search".lower())
+            topk_tokens, topk_lens, _, _ = search(enc_out.detach(), wav_lens)
+
+            # Select the best hypothesis
+            best_hyps, best_lens = topk_tokens[:, 0, :], topk_lens[:, 0]
+
+            # Convert best hypothesis to list
+            hyps = undo_padding(best_hyps, best_lens)
 
         return p_ctc, p_seq, wav_lens, hyps
 
@@ -136,8 +146,8 @@ class ASR(sb.core.Brain):
 
         if stage != sb.Stage.TRAIN:
             current_epoch = self.hparams.epoch_counter.current
-            valid_search_interval = self.hparams.valid_search_interval
-            if current_epoch % valid_search_interval == 0 or (
+            valid_search_every = self.hparams.valid_search_every
+            if current_epoch % valid_search_every == 0 or (
                 stage == sb.Stage.TEST
             ):
                 # Decode token terms to words
@@ -150,21 +160,6 @@ class ASR(sb.core.Brain):
             # compute the accuracy of the one-step-forward prediction
             self.acc_metric.append(p_seq, tokens_eos, tokens_eos_lens)
         return loss
-
-    def on_evaluate_start(self, max_key=None, min_key=None):
-        """perform checkpoint averge if needed"""
-        super().on_evaluate_start()
-
-        ckpts = self.checkpointer.find_checkpoints(
-            max_key=max_key, min_key=min_key
-        )
-        ckpt = sb.utils.checkpoints.average_checkpoints(
-            ckpts, recoverable_name="model", device=self.device
-        )
-
-        self.hparams.model.load_state_dict(ckpt, strict=True)
-        self.hparams.model.eval()
-        print("Loaded the average")
 
     def evaluate_batch(self, batch, stage):
         """Computations needed for validation/test batches"""
@@ -188,9 +183,9 @@ class ASR(sb.core.Brain):
         else:
             stage_stats["ACC"] = self.acc_metric.summarize()
             current_epoch = self.hparams.epoch_counter.current
-            valid_search_interval = self.hparams.valid_search_interval
+            valid_search_every = self.hparams.valid_search_every
             if (
-                current_epoch % valid_search_interval == 0
+                current_epoch % valid_search_every == 0
                 or stage == sb.Stage.TEST
             ):
                 stage_stats["WER"] = self.wer_metric.summarize("error_rate")
@@ -236,16 +231,28 @@ class ASR(sb.core.Brain):
                 num_to_keep=1,
             )
 
+    def on_evaluate_start(self, max_key=None, min_key=None):
+        """perform checkpoint averge if needed"""
+        super().on_evaluate_start()
+
+        ckpts = self.checkpointer.find_checkpoints(
+            max_key=max_key, min_key=min_key
+        )
+        ckpt = sb.utils.checkpoints.average_checkpoints(
+            ckpts, recoverable_name="model", device=self.device
+        )
+
+        self.hparams.model.load_state_dict(ckpt, strict=True)
+        self.hparams.model.eval()
+
     def fit_batch(self, batch):
 
         should_step = self.step % self.grad_accumulation_factor == 0
         # Managing automatic mixed precision
         if self.auto_mix_prec:
-            with torch.autocast(torch.device(self.device).type):
+            with torch.cuda.amp.autocast():
                 outputs = self.compute_forward(batch, sb.Stage.TRAIN)
-
-            # Losses are excluded from mixed precision to avoid instabilities
-            loss = self.compute_objectives(outputs, batch, sb.Stage.TRAIN)
+                loss = self.compute_objectives(outputs, batch, sb.Stage.TRAIN)
             with self.no_sync(not should_step):
                 self.scaler.scale(
                     loss / self.grad_accumulation_factor
@@ -259,18 +266,8 @@ class ASR(sb.core.Brain):
                 self.optimizer_step += 1
                 self.hparams.noam_annealing(self.optimizer)
         else:
-            if self.bfloat16_mix_prec:
-                with torch.autocast(
-                    device_type=torch.device(self.device).type,
-                    dtype=torch.bfloat16,
-                ):
-                    outputs = self.compute_forward(batch, sb.Stage.TRAIN)
-                    loss = self.compute_objectives(
-                        outputs, batch, sb.Stage.TRAIN
-                    )
-            else:
-                outputs = self.compute_forward(batch, sb.Stage.TRAIN)
-                loss = self.compute_objectives(outputs, batch, sb.Stage.TRAIN)
+            outputs = self.compute_forward(batch, sb.Stage.TRAIN)
+            loss = self.compute_objectives(outputs, batch, sb.Stage.TRAIN)
             with self.no_sync(not should_step):
                 (loss / self.grad_accumulation_factor).backward()
             if should_step:
@@ -326,7 +323,7 @@ def dataio_prepare(hparams):
             csv_path=csv_file, replacements={"data_root": data_folder}
         )
         test_datasets[name] = test_datasets[name].filtered_sorted(
-            sort_key="duration"
+            sort_key="duration", reverse=True
         )
 
     datasets = [train_data, valid_data] + [i for k, i in test_datasets.items()]
@@ -352,8 +349,12 @@ def dataio_prepare(hparams):
         # workers of the dataloader (faster).
         if hparams["speed_perturb"]:
             sig = sb.dataio.dataio.read_audio(wav)
-
-            sig = hparams["speed_perturb"](sig.unsqueeze(0)).squeeze(0)
+            # factor = np.random.uniform(0.95, 1.05)
+            # sig = resample(sig.numpy(), 16000, int(16000*factor))
+            speed = sb.processing.speech_augmentation.SpeedPerturb(
+                16000, [x for x in range(95, 105)]
+            )
+            sig = speed(sig.unsqueeze(0)).squeeze(0)  # torch.from_numpy(sig)
         else:
             sig = sb.dataio.dataio.read_audio(wav)
         return sig
@@ -399,7 +400,6 @@ def dataio_prepare(hparams):
             length_func=lambda x: x["duration"],
             shuffle=dynamic_hparams["shuffle_ex"],
             batch_ordering=dynamic_hparams["batch_ordering"],
-            max_batch_ex=dynamic_hparams["max_batch_ex"],
         )
 
         valid_batch_sampler = DynamicBatchSampler(
@@ -493,7 +493,7 @@ if __name__ == "__main__":
 
     if valid_bsampler is not None:
         valid_dataloader_opts = {"batch_sampler": valid_bsampler}
-
+    """
     # Training
     asr_brain.fit(
         asr_brain.hparams.epoch_counter,
@@ -502,6 +502,7 @@ if __name__ == "__main__":
         train_loader_kwargs=train_dataloader_opts,
         valid_loader_kwargs=valid_dataloader_opts,
     )
+    """
 
     # Testing
     for k in test_datasets.keys():  # keys are test_clean, test_other etc

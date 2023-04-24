@@ -1,3 +1,2 @@
-kenlm
-pyctcdecode
+# For wav2vect recipe (HuggingFace)
 transformers
