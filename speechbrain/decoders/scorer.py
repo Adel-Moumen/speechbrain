@@ -835,11 +835,12 @@ class TransformerLMScorer(BaseScorerInterface):
     >>> topk_hyps, topk_lengths, topk_scores, topk_log_probs = searcher(enc, wav_len)
     """
 
-    def __init__(self, language_model, temperature=1.0):
+    def __init__(self, language_model, tokenizer=None, temperature=1.0):
         self.lm = language_model
         self.lm.eval()
         self.temperature = temperature
         self.softmax = sb.nnet.activations.Softmax(apply_log=True)
+        self.tokenizer = tokenizer
 
     def score(self, alived_hyps, inp_tokens, memory, candidates, attn):
         """Specifies token scoring."""
@@ -850,6 +851,7 @@ class TransformerLMScorer(BaseScorerInterface):
                 )
             # Append the predicted token of the previous step to existing memory.
             memory = torch.cat([memory, inp_tokens.unsqueeze(1)], dim=-1)
+
             if not next(self.lm.parameters()).is_cuda:
                 self.lm.to(inp_tokens.device)
             logits = self.lm(memory)

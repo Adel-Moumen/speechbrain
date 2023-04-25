@@ -389,10 +389,11 @@ class Beam:
     partial_word: str
     last_token: Optional[str]
     last_idx_token: Optional[int]
+    list_of_idx_tokens: List[int]
     logit_score: float
         
     def __repr__(self):
-        return f"Beam(text={self.text}, next_word={self.next_word}, partial_word={self.partial_word}, last_token={self.last_token},last_idx_token={self.last_idx_token}, logit_score={self.logit_score})"
+        return f"Beam(text={self.text}, next_word={self.next_word}, partial_word={self.partial_word}, last_token={self.last_token},last_idx_token={self.last_idx_token}, list_of_idx_tokens={self.list_of_idx_tokens}, logit_score={self.logit_score})"
     
     @classmethod
     def from_lm_beam(cls, lm_beam):
@@ -402,6 +403,7 @@ class Beam:
             partial_word=lm_beam.partial_word,
             last_token=lm_beam.last_token,
             last_idx_token=lm_beam.last_idx_token,
+            list_of_idx_tokens=lm_beam.list_of_idx_tokens,
             logit_score=lm_beam.logit_score,
         )
 
@@ -410,10 +412,8 @@ class LMBeam(Beam):
     lm_score: float
 
     def __repr__(self):
-        return f"LMBeam(text={self.text}, next_word={self.next_word}, partial_word={self.partial_word}, last_token={self.last_token}, last_idx_token={self.last_idx_token}, logit_score={self.logit_score}, lm_score={self.lm_score})"
+        return f"LMBeam(text={self.text}, next_word={self.next_word}, partial_word={self.partial_word}, last_token={self.last_token}, last_idx_token={self.last_idx_token}, list_of_idx_tokens={self.list_of_idx_tokens}, logit_score={self.logit_score}, lm_score={self.lm_score})"
     
-EMPTY_START_BEAM: Beam = Beam("", "", "", None, None, 0.0)
-
 
 def _sort_and_trim_beams(beams: List[LMBeam], beam_width: int) -> List[LMBeam]:
     """Take top N beams by score."""
@@ -488,18 +488,15 @@ class BeamSearchDecoderCTC:
             topk=1, 
             kenlm_model_path=None,
             unigrams=None,
-            prune_frames=False, 
             beam_size_token=None,
-            prune_frames_thresh=0.95, 
+            prune_frames_thresh=None, 
             prune_vocab=-5.0, 
             prune_beams=-10.0,
             scorer=None,
             prune_history=False,
         ):
+
         from .language_model import (
-            AbstractLanguageModel,
-            AbstractLMState,
-            HotwordScorer,
             LanguageModel,
             load_unigram_set_from_arpa,
         )
@@ -543,8 +540,7 @@ class BeamSearchDecoderCTC:
         self.prune_beams = prune_beams
         self.space_id = space_id
         self.topk = topk
-        self.prune_frames = prune_frames
-        self.prune_frames_thresh = math.log(prune_frames_thresh)
+        self.prune_frames_thresh = None if prune_frames_thresh else math.log(prune_frames_thresh)
         self.beam_size_token = beam_size_token
         # sentencepiece
         self.spm_token = "▁"
@@ -556,7 +552,7 @@ class BeamSearchDecoderCTC:
             print(f"BeamSearchDecoderCTC: scorer={self.scorer}")
 
         if self.scorer is not None and len(self.scorer.lattice_scorers) > 0 and self.prune_history is True:
-            raise ValueError("BeamSearchDecoderCTC: prune_history is not compatible with scorer as prune_history is elaging too much")
+            print("BeamSearchDecoderCTC: prune_history will elagate a lot of beams resulting in very few beams at the end. Using lattice_scorers will be useless.")
 
         if not self.is_spm and space_id == -1:
             raise ValueError("Space id must be set")
@@ -583,11 +579,13 @@ class BeamSearchDecoderCTC:
                         partial_word=beam.partial_word,
                         last_token=beam.last_token,
                         last_idx_token=beam.last_idx_token,
+                        list_of_idx_tokens=beam.list_of_idx_tokens,
                         logit_score=beam.logit_score,
                         lm_score=beam.logit_score,
                     )
                 )
             return new_beams
+        
         else:
             new_beams = []
             for beam in beams:
@@ -618,6 +616,7 @@ class BeamSearchDecoderCTC:
                         partial_word=word_part,
                         last_token=beam.last_token,
                         last_idx_token=beam.last_idx_token,
+                        list_of_idx_tokens=beam.list_of_idx_tokens,
                         logit_score=beam.logit_score,
                         lm_score=beam.logit_score + lm_score,
                     )
@@ -641,26 +640,54 @@ class BeamSearchDecoderCTC:
         cached_p_lm_scores: Dict[str, float] = {}
 
         # Initialize beams
-        beams = [Beam("", "", "", None, None, 0.0)]
+        # TODO: use bos token from LM as the first token
+        beams = [Beam("", "", "", None, None, [1], 0.0)]
 
         # blank skip threshold
-        if self.prune_frames:
+        if self.prune_frames_thresh is not None:
             valid_frames = np.where(logits[:, self.blank_id] <= self.prune_frames_thresh)[0]
         else:
             valid_frames = range(logits.shape[0])
 
         for frame_idx in valid_frames:
-            logit = logits[frame_idx]
+            
 
+            logit = logits[frame_idx]
+            
+            
             max_idx = logit.argmax()
             idx_list = set(np.where(logit >= self.prune_vocab)[0]) | {max_idx}
+
             new_beams = []
-     
+
+            # check if beams.list_of_idx_tokens are not empty
+            #if any([len(b.list_of_idx_tokens) == 0 for b in beams]):
+            #    # add bos token
+            #    beams = [b._replace(list_of_idx_tokens=[self.bos_id]) for b in beams]
+            if self.scorer is not None and len(self.scorer.full_scorers) > 0:
+
+                if len(beams) == 0:
+                    beams = [Beam("", "", "", None, None, [1], 0.0)]
+
+                memory = [torch.tensor(b.list_of_idx_tokens[:-1]) for b in beams]
+                
+                memory = torch.nn.utils.rnn.pad_sequence(memory, batch_first=True, padding_value=0).to("cuda")
+
+                inp_tokens = torch.tensor([b.list_of_idx_tokens[-1] for b in beams], device="cuda")
+
+                # TODO: make use of memory. E.G., save it in the dataclass for future. It will save quite some times.
+                log_probs, _ = self.scorer.full_scorers["transformerlm"].score(None, inp_tokens, memory, None, None)
+
+                log_probs *= self.scorer.weights["transformerlm"]
 
             for idx_token in idx_list:
                 p_token = logit[idx_token]
                 token = self.vocab[idx_token]
-                for beam in beams:
+
+                for idx_beam, beam in enumerate(beams):
+                    if self.scorer is not None and len(self.scorer.full_scorers) > 0:
+                        p_token += log_probs[idx_beam, idx_token].item()
+
                     if idx_token == self.blank_id or beam.last_token == token:
                         new_beams.append(
                             Beam(
@@ -669,6 +696,7 @@ class BeamSearchDecoderCTC:
                                 partial_word=beam.partial_word,
                                 last_token=token,
                                 last_idx_token=idx_token,
+                                list_of_idx_tokens=beam.list_of_idx_tokens,
                                 logit_score=beam.logit_score + p_token,
                             )
                         )
@@ -682,6 +710,7 @@ class BeamSearchDecoderCTC:
                                 partial_word=clean_token,
                                 last_token=token,
                                 last_idx_token=idx_token,
+                                list_of_idx_tokens=beam.list_of_idx_tokens + [idx_token],
                                 logit_score=beam.logit_score + p_token,
                             )
                         )
@@ -694,6 +723,7 @@ class BeamSearchDecoderCTC:
                                 partial_word="",
                                 last_token=token,
                                 last_idx_token=idx_token,
+                                list_of_idx_tokens=beam.list_of_idx_tokens + [idx_token],
                                 logit_score=beam.logit_score + p_token,
                             )
                         )
@@ -705,6 +735,7 @@ class BeamSearchDecoderCTC:
                                 partial_word=beam.partial_word + token,
                                 last_token=token,
                                 last_idx_token=idx_token,
+                                list_of_idx_tokens=beam.list_of_idx_tokens + [idx_token],
                                 logit_score=beam.logit_score + p_token,
                             )
                         )
@@ -739,6 +770,7 @@ class BeamSearchDecoderCTC:
                     partial_word="",
                     last_token=None,
                     last_idx_token=None,
+                    list_of_idx_tokens=None,
                     logit_score=beam.logit_score,
                 )
             )
@@ -762,6 +794,7 @@ class BeamSearchDecoderCTC:
                 partial_word=b.partial_word,
                 last_token=b.last_token,
                 last_idx_token=b.last_idx_token,
+                list_of_idx_tokens=b.list_of_idx_tokens,
                 logit_score=b.logit_score,
                 lm_score=new_lm_scores[i].item()) 
                 for i, b in enumerate(scored_beams)

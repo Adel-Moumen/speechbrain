@@ -146,7 +146,7 @@ class ASR(sb.core.Brain):
                 predicted_words.append(text.split(" "))
 
             target_words = [wrd.split(" ") for wrd in batch.wrd]
-     
+
             self.wer_metric.append(ids, predicted_words, target_words)
 
 
@@ -492,12 +492,11 @@ if __name__ == "__main__":
     ctc_beam_search = BeamSearchDecoderCTC(
         blank_id=0,
         #kenlm_model_path="/users/amoumen/machine_learning/pr/751/src/tokenizers_transducer_experiments/save_arpa/4-gram.arpa",
-        beam_size=100,
+        beam_size=10,
         vocab=vocab_list,
-        prune_frames=True,
         prune_history=True,
-        #beam_size_token=30,
-        prune_frames_thresh=0.95,
+        prune_frames_thresh=0.90,
+        prune_vocab=-8.0,
         scorer=hparams["scorer"],
     )
 
