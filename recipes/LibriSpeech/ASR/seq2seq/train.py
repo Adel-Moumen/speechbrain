@@ -47,7 +47,7 @@ import sys
 import torch
 import logging
 import speechbrain as sb
-from speechbrain.utils.distributed import run_on_main, if_main_process
+from speechbrain.utils.distributed import run_on_main
 from hyperpyyaml import load_hyperpyyaml
 from pathlib import Path
 

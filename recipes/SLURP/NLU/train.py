@@ -13,7 +13,7 @@ import sys
 import torch
 import speechbrain as sb
 from hyperpyyaml import load_hyperpyyaml
-from speechbrain.utils.distributed import run_on_main, if_main_process
+from speechbrain.utils.distributed import run_on_main
 import jsonlines
 import ast
 import pandas as pd
