@@ -622,7 +622,6 @@ class Brain:
                 "--distributed_backend=nccl"
             )
 
-
         # Switch to the right context
         if self.device == "cuda":
             torch.cuda.set_device(0)
@@ -1265,6 +1264,7 @@ class Brain:
                     self.on_stage_end,
                     args=[Stage.VALID, avg_valid_loss, epoch],
                 )
+
     def fit(
         self,
         epoch_counter,

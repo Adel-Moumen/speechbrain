@@ -143,18 +143,17 @@ class ASR(sb.Brain):
                 stats_meta={"Epoch loaded": self.hparams.epoch_counter.current},
                 test_stats={"loss": stage_loss, "PER": per},
             )
-            if if_main_process():
-                with open(self.hparams.test_wer_file, "w") as w:
-                    w.write("CTC loss stats:\n")
-                    self.ctc_metrics.write_stats(w)
-                    w.write("\nseq2seq loss stats:\n")
-                    self.seq_metrics.write_stats(w)
-                    w.write("\nPER stats:\n")
-                    self.per_metrics.write_stats(w)
-                    print(
-                        "CTC, seq2seq, and PER stats written to file",
-                        self.hparams.test_wer_file,
-                    )
+            with open(self.hparams.test_wer_file, "w") as w:
+                w.write("CTC loss stats:\n")
+                self.ctc_metrics.write_stats(w)
+                w.write("\nseq2seq loss stats:\n")
+                self.seq_metrics.write_stats(w)
+                w.write("\nPER stats:\n")
+                self.per_metrics.write_stats(w)
+                print(
+                    "CTC, seq2seq, and PER stats written to file",
+                    self.hparams.test_wer_file,
+                )
 
     def fit_batch(self, batch):
         """Fit one batch, override to do multiple updates.

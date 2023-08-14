@@ -60,7 +60,6 @@ import logging
 import warnings
 from packaging import version
 import speechbrain.utils._workarounds as __wa
-from speechbrain.utils.distributed import main_process_only
 
 logger = logging.getLogger(__name__)
 

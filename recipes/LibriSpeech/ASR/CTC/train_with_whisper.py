@@ -176,7 +176,7 @@ class ASR(sb.Brain):
                 stats_meta={"Epoch loaded": self.hparams.epoch_counter.current},
                 test_stats=stage_stats,
             )
-            
+
             with open(self.hparams.test_wer_file, "w") as w:
                 self.wer_metric.write_stats(w)
 

@@ -249,10 +249,10 @@ class ASR(sb.core.Brain):
                 stats_meta={"Epoch loaded": self.hparams.epoch_counter.current},
                 test_stats=stage_stats,
             )
-            
+
             with open(self.hparams.test_wer_file, "w") as w:
                 self.wer_metric.write_stats(w)
-                    self.cer_metric.write_stats(w)
+                self.cer_metric.write_stats(w)
 
             # save the averaged checkpoint at the end of the evaluation stage
             # delete the rest of the intermediate checkpoints
