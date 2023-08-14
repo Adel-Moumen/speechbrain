@@ -7,7 +7,6 @@ import logging
 import ruamel.yaml
 import torch
 import os
-from speechbrain.utils.distributed import main_process_only
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +77,6 @@ class FileTrainLogger(TrainLogger):
             [self._item_to_string(k, v, dataset) for k, v in stats.items()]
         )
 
-    @main_process_only
     def log_stats(
         self,
         stats_meta,
@@ -125,7 +123,6 @@ class TensorboardLogger(TrainLogger):
         self.writer = SummaryWriter(self.save_dir)
         self.global_step = {"train": {}, "valid": {}, "test": {}, "meta": 0}
 
-    @main_process_only
     def log_stats(
         self,
         stats_meta,
@@ -192,7 +189,6 @@ class WandBLogger(TrainLogger):
         except Exception as e:
             raise e("There was an issue with the WandB Logger initialization")
 
-    @main_process_only
     def log_stats(
         self,
         stats_meta,

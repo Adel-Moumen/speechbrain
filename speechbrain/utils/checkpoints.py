@@ -98,7 +98,6 @@ def torch_recovery(obj, path, end_of_epoch, device=None):
         obj.load_state_dict(torch.load(path, map_location=device))
 
 
-@main_process_only
 def torch_save(obj, path):
     """Saves the obj's parameters to path.
 
@@ -174,11 +173,35 @@ DEFAULT_SAVE_HOOKS = {
     torch.cuda.amp.grad_scaler.GradScaler: torch_save,
 }
 if version.parse(torch.__version__) < version.parse("2.0.0"):
-    DEFAULT_LOAD_HOOKS[torch.optim.lr_scheduler._LRScheduler] = torch_recovery
-    DEFAULT_SAVE_HOOKS[torch.optim.lr_scheduler._LRScheduler] = torch_save
+    DEFAULT_LOAD_HOOKS = {
+        torch.nn.Module: torch_recovery,
+        torch.optim.Optimizer: torch_recovery,
+        torch.optim.lr_scheduler._LRScheduler: torch_recovery,
+        torch.optim.lr_scheduler.ReduceLROnPlateau: torch_recovery,
+        torch.cuda.amp.grad_scaler.GradScaler: torch_recovery,
+    }
+    DEFAULT_SAVE_HOOKS = {
+        torch.nn.Module: torch_save,
+        torch.optim.Optimizer: torch_save,
+        torch.optim.lr_scheduler._LRScheduler: torch_save,
+        torch.optim.lr_scheduler.ReduceLROnPlateau: torch_save,
+        torch.cuda.amp.grad_scaler.GradScaler: torch_save,
+    }
 else:
-    DEFAULT_LOAD_HOOKS[torch.optim.lr_scheduler.LRScheduler] = torch_recovery
-    DEFAULT_SAVE_HOOKS[torch.optim.lr_scheduler.LRScheduler] = torch_save
+    DEFAULT_LOAD_HOOKS = {
+        torch.nn.Module: torch_recovery,
+        torch.optim.Optimizer: torch_recovery,
+        torch.optim.lr_scheduler.LRScheduler: torch_recovery,
+        torch.optim.lr_scheduler.ReduceLROnPlateau: torch_recovery,
+        torch.cuda.amp.grad_scaler.GradScaler: torch_recovery,
+    }
+    DEFAULT_SAVE_HOOKS = {
+        torch.nn.Module: torch_save,
+        torch.optim.Optimizer: torch_save,
+        torch.optim.lr_scheduler.LRScheduler: torch_save,
+        torch.optim.lr_scheduler.ReduceLROnPlateau: torch_save,
+        torch.cuda.amp.grad_scaler.GradScaler: torch_save,
+    }
 
 DEFAULT_TRANSFER_HOOKS = {
     torch.nn.Module: torch_parameter_transfer,
@@ -290,7 +313,7 @@ def mark_as_transfer(method):
     return method
 
 
-def register_checkpoint_hooks(cls, save_on_main_only=True):
+def register_checkpoint_hooks(cls):
     """Class decorator which registers the load, save and transfer hooks.
 
     The hooks must have been marked with mark_as_loader and mark_as_saver,
@@ -300,10 +323,6 @@ def register_checkpoint_hooks(cls, save_on_main_only=True):
     ---------
     cls : class
         Class to decorate
-    save_on_main_only : bool
-        By default, the saver is only run on a single process. This argument
-        provides the option to run the saver on all processes, needed
-        for some savers where data is first gathered before saving.
 
     Example
     -------
@@ -328,12 +347,7 @@ def register_checkpoint_hooks(cls, save_on_main_only=True):
     global DEFAULT_TRANSFER_HOOKS
     for name, method in cls.__dict__.items():
         if hasattr(method, "_speechbrain_saver"):
-            # If the save method is to be run on main only, wrap the method with
-            # main_process_only() which stops it from running on the other procs
-            if save_on_main_only:
-                DEFAULT_SAVE_HOOKS[cls] = main_process_only(method)
-            else:
-                DEFAULT_SAVE_HOOKS[cls] = method
+            DEFAULT_SAVE_HOOKS[cls] = method
             logger.debug(f"Registered checkpoint save hook for {name}")
         if hasattr(method, "_speechbrain_loader"):
             DEFAULT_LOAD_HOOKS[cls] = method
@@ -972,7 +986,6 @@ class Checkpointer:
                 Checkpointer._delete_checkpoint(ckpt, verbosity=verbosity)
 
     @staticmethod
-    @main_process_only
     def _delete_checkpoint(checkpoint, verbosity=logging.INFO):
         if not Checkpointer._is_checkpoint_dir(checkpoint.path):
             raise RuntimeError("Checkpoint does not appear valid for deletion.")
