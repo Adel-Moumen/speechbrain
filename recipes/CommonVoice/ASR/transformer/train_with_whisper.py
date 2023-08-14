@@ -140,9 +140,9 @@ class ASR(sb.Brain):
                 stats_meta={"Epoch loaded": self.hparams.epoch_counter.current},
                 test_stats=stage_stats,
             )
-            if if_main_process():
-                with open(self.hparams.test_wer_file, "w") as w:
-                    self.wer_metric.write_stats(w)
+            
+            with open(self.hparams.test_wer_file, "w") as w:
+                self.wer_metric.write_stats(w)
 
 
 def dataio_prepare(hparams, tokenizer):
