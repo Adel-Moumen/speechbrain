@@ -11,10 +11,11 @@
 
 seed: 1
 __set_seed: !apply:torch.manual_seed [!ref <seed>]
-output_folder: !ref results/no_soft_regularisation/lstm/<seed>
+output_folder: !ref results/soft_regularisation/lstm/<seed>
 cer_file: !ref <output_folder>/cer.txt
 save_folder: !ref <output_folder>/save
 train_log: !ref <output_folder>/train_log.txt
+wandb_folder: !ref <save_folder>/
 
 # Data files
 data_folder: !PLACEHOLDER # e,g./path/to/aishell
@@ -30,26 +31,26 @@ tokenizer_file: speechbrain/asr-transformer-aishell/tokenizer.ckpt
 
 # Training parameters
 number_of_epochs: 40
-number_of_ctc_epochs: 30
+number_of_ctc_epochs: 10
 batch_size: 8
 lr: 0.0003
 ctc_weight: 0.5
 sorting: ascending
 
 ###############################################
-use_soft_regularisation: False
+use_soft_regularisation: True
 soft_regularisation_weight: 0.005
-rnn_class: !name:fast_sligru.fast_gru.GRU
+rnn_class: !name:fast_sligru.fast_gru.LSTM
 
 train_logger: !new:speechbrain.utils.train_logger.WandBLogger
    initializer: !name:wandb.init
       entity: zarko
-      project: icassp-2024
-      name: lstm
-      tags: ["no_soft_regularisation"]
+      project: icassp-2024-aishell
+      name: lstm_soft_regu
+      tags: ["no_soft_regularisation", "lstm"]
       reinit: True
-      resume: False
-      dir: !ref <output_folder>/wandb
+      resume: True
+      dir: !ref <wandb_folder>
 ##############################################
 
 dynamic_batching: False

@@ -15,6 +15,7 @@ output_folder: !ref results/soft_regularisation/gru/<seed>
 cer_file: !ref <output_folder>/cer.txt
 save_folder: !ref <output_folder>/save
 train_log: !ref <output_folder>/train_log.txt
+wandb_folder: !ref <save_folder>/
 
 # Data files
 data_folder: !PLACEHOLDER # e,g./path/to/aishell
@@ -31,7 +32,7 @@ tokenizer_file: speechbrain/asr-transformer-aishell/tokenizer.ckpt
 # Training parameters
 number_of_epochs: 40
 number_of_ctc_epochs: 10
-batch_size: 16
+batch_size: 8
 lr: 0.0003
 ctc_weight: 0.5
 sorting: ascending
@@ -44,12 +45,12 @@ rnn_class: !name:fast_sligru.fast_gru.GRU
 train_logger: !new:speechbrain.utils.train_logger.WandBLogger
    initializer: !name:wandb.init
       entity: zarko
-      project: icassp-2024
+      project: icassp-2024-aishell
       name: gru_soft_regu
       tags: ["soft_regularisation", "gru"]
       reinit: True
-      resume: False
-      dir: !ref <output_folder>/wandb
+      resume: True
+      dir: !ref <wandb_folder>
 ###############################################
 
 dynamic_batching: False

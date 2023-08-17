@@ -45,12 +45,12 @@ rnn_class: !name:fast_sligru.fast_gru.GRU
 train_logger: !new:speechbrain.utils.train_logger.WandBLogger
    initializer: !name:wandb.init
       entity: zarko
-      project: icassp-2024-test
-      name: gru
+      project: icassp-2024-aishell
+      name: gru_no_soft_regu
       tags: ["no_soft_regularisation", "gru"]
       reinit: True
       resume: True
-      dir: !ref wandb_folder
+      dir: !ref <wandb_folder>
 ###############################################
 
 dynamic_batching: False
