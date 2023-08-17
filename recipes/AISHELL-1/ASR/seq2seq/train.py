@@ -14,6 +14,8 @@ from hyperpyyaml import load_hyperpyyaml
 
 logger = logging.getLogger(__name__)
 
+def compute_loss(net):
+    return net.compute_external_loss()
 
 # Define training procedure
 class ASR(sb.Brain):
@@ -89,6 +91,7 @@ class ASR(sb.Brain):
         )
 
         # Add ctc loss if necessary
+        loss_ctc = None
         if (
             stage == sb.Stage.TRAIN
             and current_epoch <= self.hparams.number_of_ctc_epochs
@@ -101,6 +104,47 @@ class ASR(sb.Brain):
         else:
             loss = loss_seq
 
+        # print(self.modules.enc.module.RNN)
+        # check if self.modules.enc.module.RNN exist
+        if hasattr(self.modules.enc, "module"):
+            rnn_module = self.modules.enc.module.RNN
+        else:
+            rnn_module = self.modules.enc.RNN
+            
+        if stage == sb.Stage.TRAIN:
+            
+            if loss_ctc is None:
+                loss_ctc = -1
+
+            if self.hparams.train_logger.run is not None and self.hparams.use_soft_regularisation:
+                ext_loss = compute_loss(rnn_module)
+
+                ext_loss_with_lr = self.hparams.soft_regularisation_weight * ext_loss
+                
+                self.hparams.train_logger.run.log({
+                    "loss": loss,
+                    "soft_regularisation_with_lr":ext_loss_with_lr,
+                    "soft_regularisation":ext_loss,
+                    "soft_regularisation_sqrt": torch.sqrt(ext_loss).item(),
+                    "loss_ctc":loss_ctc,
+                    "loss_seq":loss_seq,
+                })
+
+                loss += ext_loss_with_lr
+            elif self.hparams.train_logger.run is not None:
+                with torch.no_grad():
+                    ext_loss = compute_loss(rnn_module)
+                    ext_loss_with_lr = self.hparams.soft_regularisation_weight * ext_loss
+
+                self.hparams.train_logger.run.log({
+                    "loss": loss,
+                    "soft_regularisation_with_lr":ext_loss_with_lr,
+                    "soft_regularisation":ext_loss,
+                    "soft_regularisation_sqrt": torch.sqrt(ext_loss).item(),
+                    "loss_ctc":loss_ctc,
+                    "loss_seq":loss_seq,
+                })
+
         if stage != sb.Stage.TRAIN:
             # Decode token terms to words
             predicted_words = [
@@ -111,6 +155,16 @@ class ASR(sb.Brain):
             if self.hparams.remove_spaces:
                 predicted_words = ["".join(p) for p in predicted_words]
                 target_words = ["".join(t) for t in target_words]
+
+            if self.hparams.train_logger.run is not None:
+                with torch.no_grad():
+                    ext_loss = compute_loss(rnn_module)
+
+                    self.hparams.train_logger.run.log({
+                        "test_loss": loss,
+                        "test_soft_regularisation":ext_loss,
+                        "test_soft_regularisation_sqrt": torch.sqrt(ext_loss).item(),
+                    })
 
         if stage != sb.Stage.TRAIN:
             self.cer_metric.append(ids, predicted_words, target_words)

@@ -1,4 +1,0 @@
-mir_eval
-pesq
-pystoi
-
