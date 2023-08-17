@@ -346,6 +346,17 @@ if __name__ == "__main__":
     with open(hparams_file) as fin:
         hparams = load_hyperpyyaml(fin, overrides)
 
+    from pathlib import Path
+
+    path_obj = Path(hparams["wandb_folder"])
+    if not path_obj.exists() or not path_obj.is_dir():
+        # Create the folder and its parents if they don't exist
+        path_obj.mkdir(parents=True)
+        print(hparams["wandb_folder"])
+    else:
+        print(hparams["wandb_folder"])
+
+
     # If --distributed_launch then
     # create ddp_group with the right communication protocol
     sb.utils.distributed.ddp_init_group(run_opts)

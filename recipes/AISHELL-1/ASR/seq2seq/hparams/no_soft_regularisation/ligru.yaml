@@ -30,8 +30,8 @@ test_data: !ref <csv_folder>/test.csv
 tokenizer_file: speechbrain/asr-transformer-aishell/tokenizer.ckpt
 
 # Training parameters
-number_of_epochs: 40
-number_of_ctc_epochs: 10
+number_of_epochs: 30
+number_of_ctc_epochs: 25
 batch_size: 8
 lr: 0.0003
 ctc_weight: 0.5
@@ -50,8 +50,7 @@ train_logger: !new:speechbrain.utils.train_logger.WandBLogger
       name: ligru_no_soft_regu
       tags: ["no_soft_regularisation", "ligru"]
       reinit: True
-      resume: True
-      dir: !ref <wandb_folder>
+      resume: False
 ###############################################
 
 dynamic_batching: False

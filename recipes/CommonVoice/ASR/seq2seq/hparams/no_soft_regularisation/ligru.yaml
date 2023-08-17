@@ -49,8 +49,7 @@ train_logger: !new:speechbrain.utils.train_logger.WandBLogger
       name: ligru_no_soft_regu
       tags: ["soft_regularisation", "ligru"]
       reinit: True
-      resume: True
-      dir: !ref <wandb_folder>
+      resume: False
 ###############################################
 
 # With data_parallel batch_size is split into N jobs
