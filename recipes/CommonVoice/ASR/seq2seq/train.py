@@ -1,14 +1,4 @@
 #!/usr/bin/env python3
-import sys
-import torch
-import logging
-import speechbrain as sb
-import torchaudio
-from hyperpyyaml import load_hyperpyyaml
-from speechbrain.tokenizers.SentencePiece import SentencePiece
-from speechbrain.utils.data_utils import undo_padding
-from speechbrain.utils.distributed import run_on_main, if_main_process
-
 """Recipe for training a sequence-to-sequence ASR system with CommonVoice.
 The system employs an encoder, a decoder, and an attention mechanism
 between them. Decoding is performed with beamsearch.
@@ -26,6 +16,15 @@ other possible variations.
 Authors
  * Titouan Parcollet 2020
 """
+import sys
+import torch
+import logging
+import speechbrain as sb
+import torchaudio
+from hyperpyyaml import load_hyperpyyaml
+from speechbrain.tokenizers.SentencePiece import SentencePiece
+from speechbrain.utils.data_utils import undo_padding
+from speechbrain.utils.distributed import run_on_main, if_main_process
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +102,48 @@ class ASR(sb.core.Brain):
         else:
             loss = loss_seq
 
+        # print(self.modules.enc.module.RNN)
+        # check if self.modules.enc.module.RNN exist
+        if hasattr(self.modules.enc, "module"):
+            rnn_module = self.modules.enc.module.RNN
+        else:
+            rnn_module = self.modules.enc.RNN
+            
+        if stage == sb.Stage.TRAIN:
+            
+            if loss_ctc is None:
+                loss_ctc = -1
+
+            if self.hparams.train_logger.run is not None and self.hparams.use_soft_regularisation:
+                ext_loss = rnn_module.compute_external_loss()
+
+                ext_loss_with_lr = self.hparams.soft_regularisation_weight * ext_loss
+                
+                self.hparams.train_logger.run.log({
+                    "loss": loss,
+                    "soft_regularisation_with_lr":ext_loss_with_lr,
+                    "soft_regularisation":ext_loss,
+                    "soft_regularisation_sqrt": torch.sqrt(ext_loss).item(),
+                    "loss_ctc":loss_ctc,
+                    "loss_seq":loss_seq,
+                })
+
+                loss += ext_loss_with_lr
+            elif self.hparams.train_logger.run is not None:
+                with torch.no_grad():
+                    ext_loss = rnn_module.compute_external_loss()
+                    ext_loss_with_lr = self.hparams.soft_regularisation_weight * ext_loss
+
+                self.hparams.train_logger.run.log({
+                    "loss": loss,
+                    "soft_regularisation_with_lr":ext_loss_with_lr,
+                    "soft_regularisation":ext_loss,
+                    "soft_regularisation_sqrt": torch.sqrt(ext_loss).item(),
+                    "loss_ctc":loss_ctc,
+                    "loss_seq":loss_seq,
+                })
+
+
         if stage != sb.Stage.TRAIN:
             # Decode token terms to words
             predicted_words = self.tokenizer(
@@ -115,6 +156,16 @@ class ASR(sb.core.Brain):
 
             self.wer_metric.append(ids, predicted_words, target_words)
             self.cer_metric.append(ids, predicted_words, target_words)
+
+            if self.hparams.train_logger.run is not None:
+                with torch.no_grad():
+                    ext_loss = rnn_module.compute_external_loss()
+
+                    self.hparams.train_logger.run.log({
+                        "test_loss": loss,
+                        "test_soft_regularisation":ext_loss,
+                        "test_soft_regularisation_sqrt": torch.sqrt(ext_loss).item(),
+                    })
 
         return loss
 
