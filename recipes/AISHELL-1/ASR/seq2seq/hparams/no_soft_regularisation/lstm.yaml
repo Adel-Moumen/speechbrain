@@ -40,7 +40,7 @@ sorting: ascending
 ###############################################
 use_soft_regularisation: False
 soft_regularisation_weight: 0.005
-rnn_class: !name:fast_sligru.fast_gru.GRU
+rnn_class: !name:fast_sligru.fast_lstm.LSTM
 
 train_logger: !new:speechbrain.utils.train_logger.WandBLogger
    initializer: !name:wandb.init
