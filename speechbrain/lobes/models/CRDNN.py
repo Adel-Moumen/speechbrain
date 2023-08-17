@@ -83,7 +83,7 @@ class CRDNN(sb.nnet.containers.Sequential):
         input_size=None,
         input_shape=None,
         activation=torch.nn.LeakyReLU,
-        dropout=0.15,
+        dropout=0.0,
         cnn_blocks=2,
         cnn_channels=[128, 256],
         cnn_kernelsize=(3, 3),
