@@ -123,11 +123,11 @@ class ASR(sb.Brain):
                 
                 self.hparams.train_logger.run.log({
                     "loss": loss,
-                    "soft_regularisation_with_lr":ext_loss_with_lr,
-                    "soft_regularisation":ext_loss,
-                    "soft_regularisation_sqrt": torch.sqrt(ext_loss).item(),
-                    "loss_ctc":loss_ctc,
-                    "loss_seq":loss_seq,
+                    "train_soft_regularisation_with_lr":ext_loss_with_lr,
+                    "train_soft_regularisation":ext_loss,
+                    "train_soft_regularisation_sqrt": torch.sqrt(ext_loss).item(),
+                    "train_loss_ctc":loss_ctc,
+                    "train_loss_seq":loss_seq,
                 })
 
                 loss += ext_loss_with_lr
@@ -137,12 +137,12 @@ class ASR(sb.Brain):
                     ext_loss_with_lr = self.hparams.soft_regularisation_weight * ext_loss
 
                 self.hparams.train_logger.run.log({
-                    "loss": loss,
-                    "soft_regularisation_with_lr":ext_loss_with_lr,
-                    "soft_regularisation":ext_loss,
-                    "soft_regularisation_sqrt": torch.sqrt(ext_loss).item(),
-                    "loss_ctc":loss_ctc,
-                    "loss_seq":loss_seq,
+                    "train_loss": loss,
+                    "train_soft_regularisation_with_lr":ext_loss_with_lr,
+                    "train_soft_regularisation":ext_loss,
+                    "train_soft_regularisation_sqrt": torch.sqrt(ext_loss).item(),
+                    "train_loss_ctc":loss_ctc,
+                    "train_loss_seq":loss_seq,
                 })
 
         if stage != sb.Stage.TRAIN:
@@ -160,11 +160,20 @@ class ASR(sb.Brain):
                 with torch.no_grad():
                     ext_loss = compute_loss(rnn_module)
 
+                if stage == sb.Stage.VALID:
+                    self.hparams.train_logger.run.log({
+                        "valid_loss": loss,
+                        "valid_soft_regularisation":ext_loss,
+                        "valid_soft_regularisation_sqrt": torch.sqrt(ext_loss).item(),
+                    })
+
+                if stage == sb.Stage.TEST:
                     self.hparams.train_logger.run.log({
                         "test_loss": loss,
                         "test_soft_regularisation":ext_loss,
                         "test_soft_regularisation_sqrt": torch.sqrt(ext_loss).item(),
                     })
+
 
         if stage != sb.Stage.TRAIN:
             self.cer_metric.append(ids, predicted_words, target_words)
