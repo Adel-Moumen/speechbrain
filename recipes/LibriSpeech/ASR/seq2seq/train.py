@@ -53,6 +53,8 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+def compute_loss(net):
+    return net.compute_external_loss()
 
 # Define training procedure
 class ASR(sb.Brain):
@@ -152,6 +154,24 @@ class ASR(sb.Brain):
             target_words = [wrd.split(" ") for wrd in batch.wrd]
             self.wer_metric.append(ids, predicted_words, target_words)
             self.cer_metric.append(ids, predicted_words, target_words)
+
+        if stage == sb.Stage.TEST:
+            if hasattr(self.modules.enc, "module"):
+                rnn_module = self.modules.enc.module.RNN
+            else:
+                rnn_module = self.modules.enc.RNN
+
+            ext_loss = compute_loss(rnn_module)
+            
+            # Convert the loss to a string
+            loss_str = str(ext_loss.item())
+
+            # Convert the loss to a string
+            output_str = f"Loss, {loss_str}\n"
+            
+            # Append the output string to the file
+            with open(self.hparams.test_lambda_file, "a") as file:
+                file.write(output_str)
 
         return loss
 
@@ -421,6 +441,9 @@ if __name__ == "__main__":
     for k in test_datasets.keys():  # keys are test_clean, test_other etc
         asr_brain.hparams.test_wer_file = os.path.join(
             hparams["output_wer_folder"], f"wer_{k}.txt"
+        )
+        asr_brain.hparams.test_lambda_file = os.path.join(
+            hparams["output_folder"], f"lambda_{k}.txt"
         )
         asr_brain.evaluate(
             test_datasets[k],
