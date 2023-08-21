@@ -22,7 +22,7 @@ data_folder: !PLACEHOLDER # e,g./path/to/aishell
 # noise/ris dataset will automatically be downloaded
 data_folder_rirs: !ref <data_folder> # Change this is needed
 skip_prep: True
-ckpt_interval_minutes: 15 # save checkpoint every N min
+ckpt_interval_minutes: 5 # save checkpoint every N min
 csv_folder: /users/amoumen/machine_learning/icassp-2024-clipping/src/recipes/AISHELL-1/ASR/seq2seq/csv
 train_data: !ref <csv_folder>/train.csv
 valid_data: !ref <csv_folder>/dev.csv
