@@ -115,11 +115,11 @@ class TransducerBeamSearcher(torch.nn.Module):
         self.softmax = torch.nn.LogSoftmax(dim=-1)
 
         if self.beam_size <= 1:
-            self.searcher = self.transducer_greedy_decode
+            self.searcher = self.transducer_greedy_decode_nemo
         else:
             self.searcher = self.transducer_beam_search_decode
 
-    def forward(self, tn_output):
+    def forward(self, encoder_output):
         """
         Arguments
         ----------
@@ -131,9 +131,12 @@ class TransducerBeamSearcher(torch.nn.Module):
         -------
         Topk hypotheses
         """
-
-        hyps = self.searcher(tn_output)
-        return hyps
+        if self.searcher.__name__ == "transducer_greedy_decode_nemo":
+            for batch_idx in range(encoder_output.size(0)):
+                hyps = self.searcher(encoder_output[batch_idx, :, :].unsqueeze(1))
+            return hyps
+        else:
+            return self.searcher(encoder_output)
 
     def transducer_greedy_decode(
         self, tn_output, hidden_state=None, return_hidden=False
@@ -183,6 +186,8 @@ class TransducerBeamSearcher(torch.nn.Module):
             `transducer_greedy_decode` where you left off in a streaming
             context.
         """
+        import time 
+        start_time = time.time()
         hyp = {
             "prediction": [[] for _ in range(tn_output.size(0))],
             "logp_scores": [0.0 for _ in range(tn_output.size(0))],
@@ -252,9 +257,94 @@ class TransducerBeamSearcher(torch.nn.Module):
         if return_hidden:
             # append the `(out_PN, hidden)` tuple to ret
             ret += ((out_PN, hidden,),)
-
+        end_time = time.time()
+        print("Time taken for greedy decoding: ", end_time - start_time)
         return ret
 
+    def transducer_greedy_decode_nemo(
+        self, tn_output
+    ):
+        """TODO: add enc_lens in input
+        Arguments
+        ----------
+        tn_output : torch.tensor
+            Output from transcription network with shape
+            # [T, 1, D].
+        """
+        import time 
+        start_time = time.time()
+        hidden = None 
+        label = []
+        timesteps = []
+        # Maximum symbols per utterance.
+        max_sym_per_utt = 1
+
+        input_PN = torch.empty(
+            (1, 1), 
+            device=tn_output.device,
+            dtype=torch.int32,
+        )
+
+        for time_idx in range(tn_output.size(0)):
+            # [1, 1, D]
+            f = tn_output.narrow(dim=0, start=time_idx, length=1)
+            
+            not_blank = True 
+            sym_per_utt = 0
+
+            while not_blank and (sym_per_utt < max_sym_per_utt):
+                
+                # In the first timestep, we initialize the network with RNNT Blank
+                # In later timesteps, we provide previous predicted label as input.
+                last_label = self.blank_id if label == [] else label[-1]
+
+                input_PN = input_PN.fill_(last_label)
+                
+                # print("inp = ", input_PN.shape)
+                g, hidden_prime = self._forward_PN(
+                    input_PN, 
+                    self.decode_network_lst, 
+                    hidden,
+                )
+                # print("f = ", f.shape)
+                # print("g = ", g.shape)
+                
+                log_probs = self._joint_forward_step(
+                   f,
+                   g,
+                )[0, 0, :]
+
+                del g
+
+                v, k = torch.max(
+                    log_probs, dim=-1
+                )
+                k = k.item()
+
+                # print(k)
+
+                del log_probs
+
+                # If blank token is predicted, exit inner loop, move onto next timestep t
+                if k == self.blank_id:
+                    not_blank = False
+                else:
+                    label.append(k)
+                    timesteps.append(time_idx)
+                    hidden = hidden_prime
+                    sym_per_utt += 1
+
+        end_time = time.time()
+        print("Time taken for greedy decoding: ", end_time - start_time)
+        print(label)
+        ret = (
+            [label],
+            None,
+            None,
+            None,
+        )
+        return ret
+    
     def transducer_beam_search_decode(self, tn_output):
         """Transducer beam search decoder is a beam search decoder over batch which apply Transducer rules:
             1- for each utterance:
