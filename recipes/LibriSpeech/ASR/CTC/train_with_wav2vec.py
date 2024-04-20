@@ -191,9 +191,14 @@ class ASR(sb.Brain):
                 stats_meta={"Epoch loaded": self.hparams.epoch_counter.current},
                 test_stats=stage_stats,
             )
+
             if if_main_process():
                 with open(self.hparams.test_wer_file, "w") as w:
                     self.wer_metric.write_stats(w)
+
+            # out_file = self.hparams.test_wer_file + os.environ.get("RANK")
+            # with open(out_file, "w") as w:
+            #     self.wer_metric.write_stats(w)
 
     def init_optimizers(self):
         "Initializes the wav2vec2 optimizer and model optimizer"
