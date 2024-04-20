@@ -1,1 +1,1 @@
-hparams_RNNLM
+ln -s `realpath recipes/LibriSpeech/LM/dataset.py` dataset.py
