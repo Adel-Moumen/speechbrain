@@ -224,6 +224,9 @@ def process_line(line, convert_to_wav, data_folder, language, accented_letters):
 
     if convert_to_wav:
         audio_path = convert_mp3_to_wav(audio_path)
+        extension = ".wav"
+    else:
+        extension = ".mp3"
 
     file_name = audio_path.split(".")[-2].split("/")[-1]
     spk_id = line.split("\t")[0]
@@ -271,6 +274,9 @@ def process_line(line, convert_to_wav, data_folder, language, accented_letters):
     else:
         if len(words.split(" ")) < 3:
             return None
+
+    # audio_path is now $data_root/file_name.mp3
+    audio_path = "$data_root/" + file_name + extension
 
     # Composition of the csv_line
     return CVRow(snt_id, duration, audio_path, spk_id, words)
