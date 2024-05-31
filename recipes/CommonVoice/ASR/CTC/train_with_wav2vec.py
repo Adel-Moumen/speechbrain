@@ -185,10 +185,7 @@ class ASR(sb.core.Brain):
                     for hyp, score, hyp_id in zip(
                         self.topk_hyps, self.topk_scores, self.topk_ids
                     ):
-                        for h, s, i in zip(hyp, score, hyp_id):
-                            # s is numpy format. need to convert it 
-                            s = s.item()
-                            w.write(f"{i}\t{s}\t{h}\n")
+                        w.write(f"{hyp_id}\t{score}\t{hyp}\n")
                 with open(self.hparams.test_wer_file, "w") as w:
                     self.wer_metric.write_stats(w)
 
