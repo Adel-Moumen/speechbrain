@@ -95,16 +95,26 @@ class ASR(sb.core.Brain):
             if stage == sb.Stage.TEST:
                 predicted_words = [hyp[0].text.split(" ") for hyp in p_tokens]
                 topk_hyps = [
-                    [hyp.text.split(" ") for hyp in hyps] for hyps in p_tokens
+                    [hyp.text for hyp in hyps] for hyps in p_tokens
                 ]
                 topk_scores = [
                     [hyp.score for hyp in hyps] for hyps in p_tokens
                 ]
                 topk_ids = [[ids[i] for _ in hyps] for i, hyps in enumerate(p_tokens)]
-                print("topk_ids", topk_ids)
-                print("topk_hyps", topk_hyps)
-                print("topk_scores", topk_scores)
-                exit()
+
+                # Write decoding results to file
+                if if_main_process():
+                    if COUNTER == 0:
+                        file = self.hparams["dev_nbest_file"]
+                    else:
+                        file = self.hparams["test_nbest_file"] 
+                    with open(file, "w") as w:
+                    
+                        for hyp, score, hyp_id in zip(
+                            topk_hyps, topk_scores, topk_ids
+                        ):
+                            for h, s, i in zip(hyp, score, hyp_id):
+                                w.write(f"{i}\t{s}\t{h}\n")
 
 
             self.wer_metric.append(ids, predicted_words, target_words)
@@ -162,6 +172,7 @@ class ASR(sb.core.Brain):
                 test_stats=stage_stats,
             )
             if if_main_process():
+                COUNTER += 1
                 with open(self.hparams.test_wer_file, "w") as w:
                     self.wer_metric.write_stats(w)
 
