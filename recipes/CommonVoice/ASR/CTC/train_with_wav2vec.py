@@ -72,6 +72,8 @@ class ASR(sb.core.Brain):
     def compute_objectives(self, predictions, batch, stage):
         """Computes the loss (CTC) given predictions and targets."""
 
+        global COUNTER
+
         p_ctc, wav_lens, p_tokens = predictions
 
         ids = batch.id
@@ -172,6 +174,7 @@ class ASR(sb.core.Brain):
                 test_stats=stage_stats,
             )
             if if_main_process():
+                global COUNTER
                 COUNTER += 1
                 with open(self.hparams.test_wer_file, "w") as w:
                     self.wer_metric.write_stats(w)
