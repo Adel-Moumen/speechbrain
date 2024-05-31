@@ -175,6 +175,7 @@ class ASR(sb.core.Brain):
             )
             if if_main_process():
                 global COUNTER
+                print("update COUNTER = " , COUNTER)
                 COUNTER += 1
                 with open(self.hparams.test_wer_file, "w") as w:
                     self.wer_metric.write_stats(w)
