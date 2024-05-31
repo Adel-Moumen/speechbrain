@@ -9,6 +9,8 @@ seed: 1234
 __set_seed: !!python/object/apply:torch.manual_seed [!ref <seed>]
 output_folder: !ref results/wav2vec2_ctc_en/<seed>
 test_wer_file: !ref <output_folder>/wer_test.txt
+dev_nbest_file: !ref <output_folder>/dev_nbest.txt
+test_nbest_file: !ref <output_folder>/test_nbest.txt
 save_folder: !ref <output_folder>/save
 train_log: !ref <output_folder>/train_log.txt
 
@@ -84,7 +86,7 @@ test_beam_search:
     beam_prune_logp: -12.0
     token_prune_min_logp: -1.2
     prune_history: True
-    topk: 1
+    topk: 20
     alpha: 1.0
     beta: 0.5
     # To use n-gram LM for decoding, follow steps in README.md.

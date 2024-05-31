@@ -37,6 +37,7 @@ from speechbrain.utils.distributed import if_main_process, run_on_main
 
 logger = logging.getLogger(__name__)
 
+COUNTER = 0 
 
 # Define training procedure
 class ASR(sb.core.Brain):
@@ -86,14 +87,25 @@ class ASR(sb.core.Brain):
         if stage == sb.Stage.VALID:
             # Convert token indices to words
             predicted_words = self.tokenizer(p_tokens, task="decode_from_list")
-
-        elif stage == sb.Stage.TEST:
-            predicted_words = [hyp[0].text.split(" ") for hyp in p_tokens]
-
         if stage != sb.Stage.TRAIN:
             # Convert indices to words
             target_words = undo_padding(tokens, tokens_lens)
             target_words = self.tokenizer(target_words, task="decode_from_list")
+
+            if stage == sb.Stage.TEST:
+                predicted_words = [hyp[0].text.split(" ") for hyp in p_tokens]
+                topk_hyps = [
+                    [hyp.text.split(" ") for hyp in hyps] for hyps in p_tokens
+                ]
+                topk_scores = [
+                    [hyp.score for hyp in hyps] for hyps in p_tokens
+                ]
+                topk_ids = [[ids[i] for _ in hyps] for i, hyps in enumerate(p_tokens)]
+                print("topk_ids", topk_ids)
+                print("topk_hyps", topk_hyps)
+                print("topk_scores", topk_scores)
+                exit()
+
 
             self.wer_metric.append(ids, predicted_words, target_words)
             self.cer_metric.append(ids, predicted_words, target_words)
@@ -364,6 +376,13 @@ if __name__ == "__main__":
         valid_data,
         train_loader_kwargs=hparams["dataloader_options"],
         valid_loader_kwargs=hparams["test_dataloader_options"],
+    )
+
+    # Valid data
+    asr_brain.evaluate(
+        valid_data,
+        min_key="WER",
+        test_loader_kwargs=hparams["test_dataloader_options"],
     )
 
     # Test
