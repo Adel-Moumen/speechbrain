@@ -9,8 +9,8 @@ seed: 1234
 __set_seed: !!python/object/apply:torch.manual_seed [!ref <seed>]
 output_folder: !ref results/wav2vec2_ctc_en/<seed>
 test_wer_file: !ref <output_folder>/wer_test.txt
-dev_nbest_file: !ref <output_folder>/dev_nbest.txt
-test_nbest_file: !ref <output_folder>/test_nbest.txt
+dev_nbest_file: !ref <output_folder>/dev_nbest.csv
+test_nbest_file: !ref <output_folder>/test_nbest.csv
 save_folder: !ref <output_folder>/save
 train_log: !ref <output_folder>/train_log.txt
 

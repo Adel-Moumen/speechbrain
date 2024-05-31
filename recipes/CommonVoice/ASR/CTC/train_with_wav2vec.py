@@ -106,17 +106,13 @@ class ASR(sb.core.Brain):
 
                 # Write decoding results to file
                 if if_main_process():
-                    if COUNTER == 0:
-                        file = self.hparams.dev_nbest_file
-                    else:
-                        file = self.hparams.test_nbest_file 
-                    with open(file, "w") as w:
-                    
-                        for hyp, score, hyp_id in zip(
-                            topk_hyps, topk_scores, topk_ids
-                        ):
-                            for h, s, i in zip(hyp, score, hyp_id):
-                                w.write(f"{i}\t{s}\t{h}\n")
+                    for hyp, score, hyp_id in zip(
+                        topk_hyps, topk_scores, topk_ids
+                    ):
+                        for h, s, i in zip(hyp, score, hyp_id):
+                            self.topk_hyps.append(h)
+                            self.topk_scores.append(s)
+                            self.topk_ids.append(i)
 
 
             self.wer_metric.append(ids, predicted_words, target_words)
@@ -129,6 +125,9 @@ class ASR(sb.core.Brain):
         if stage != sb.Stage.TRAIN:
             self.cer_metric = self.hparams.cer_computer()
             self.wer_metric = self.hparams.error_rate_computer()
+            self.topk_hyps = []
+            self.topk_scores = []
+            self.topk_ids = []
 
     def on_stage_end(self, stage, stage_loss, epoch):
         """Gets called at the end of an epoch."""
@@ -175,8 +174,19 @@ class ASR(sb.core.Brain):
             )
             if if_main_process():
                 global COUNTER
-                print("update COUNTER = " , COUNTER)
                 COUNTER += 1
+                if COUNTER == 0:
+                    file = self.hparams.dev_nbest_file
+                else:
+                    file = self.hparams.test_nbest_file 
+                with open(file, "w") as w:
+                    # write header
+                    w.write("id\tscore\thyp\n")
+                    for hyp, score, hyp_id in zip(
+                        self.topk_hyps, self.topk_scores, self.topk_ids
+                    ):
+                        for h, s, i in zip(hyp, score, hyp_id):
+                            w.write(f"{i}\t{s}\t{h}\n")
                 with open(self.hparams.test_wer_file, "w") as w:
                     self.wer_metric.write_stats(w)
 
