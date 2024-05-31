@@ -105,9 +105,9 @@ class ASR(sb.core.Brain):
                 # Write decoding results to file
                 if if_main_process():
                     if COUNTER == 0:
-                        file = self.hparams["dev_nbest_file"]
+                        file = self.hparams.dev_nbest_file
                     else:
-                        file = self.hparams["test_nbest_file"] 
+                        file = self.hparams.test_nbest_file 
                     with open(file, "w") as w:
                     
                         for hyp, score, hyp_id in zip(
