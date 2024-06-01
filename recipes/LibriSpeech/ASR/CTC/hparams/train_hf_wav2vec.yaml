@@ -10,6 +10,8 @@ seed: 1986
 __set_seed: !apply:torch.manual_seed [!ref <seed>]
 output_folder: !ref results/train_wav2vec2_char/<seed>
 output_wer_folder: !ref <output_folder>/
+dev_nbest_file: !ref <output_folder>/dev_nbest.csv
+test_nbest_file: !ref <output_folder>/test_nbest.csv
 save_folder: !ref <output_folder>/save
 train_log: !ref <output_folder>/train_log.txt
 
@@ -175,19 +177,14 @@ wav_augment: !new:speechbrain.augment.augmenter.Augmenter
 
 # Decoding parameters
 test_beam_search:
-   beam_size: 143
-   topk: 1
+   beam_size: 100
+   topk: 20
    blank_index: !ref <blank_index>
    space_token: ' ' # make sure this is the same as the one used in the tokenizer
-   beam_prune_logp: -12.0
-   token_prune_min_logp: -1.2
-   prune_history: True
-   alpha: 0.8
-   beta: 1.2
-   # can be downloaded from here https://www.openslr.org/11/ or trained with kenLM
-   # It can either be a .bin or .arpa ; note: .arpa is much slower at loading
-   # If you don't want to use an LM, comment it out or set it to null
-   kenlm_model_path: null
+   beam_prune_logp: -100
+   token_prune_min_logp: -100
+   prune_history: False
+
 
 ############################## Logging and Pretrainer ##########################
 

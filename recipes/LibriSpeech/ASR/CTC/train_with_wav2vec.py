@@ -34,6 +34,7 @@ from speechbrain.utils.distributed import if_main_process, run_on_main
 
 logger = logging.getLogger(__name__)
 
+COUNTER = 0 
 
 # Define training procedure
 class ASR(sb.Brain):
@@ -83,16 +84,6 @@ class ASR(sb.Brain):
         elif stage == sb.Stage.TEST:
             p_tokens = test_searcher(p_ctc, wav_lens)
 
-            candidates = []
-            scores = []
-
-            for batch in p_tokens:
-                candidates.append([hyp.text for hyp in batch])
-                scores.append([hyp.score for hyp in batch])
-
-            if hasattr(self.hparams, "rescorer"):
-                p_tokens, _ = self.hparams.rescorer.rescore(candidates, scores)
-
         return p_ctc, wav_lens, p_tokens
 
     def compute_objectives(self, predictions, batch, stage):
@@ -123,14 +114,28 @@ class ASR(sb.Brain):
                 for utt_seq in predicted_tokens
             ]
         elif stage == sb.Stage.TEST:
-            if hasattr(self.hparams, "rescorer"):
-                predicted_words = [
-                    hyp[0].split(" ") for hyp in predicted_tokens
-                ]
-            else:
-                predicted_words = [
-                    hyp[0].text.split(" ") for hyp in predicted_tokens
-                ]
+            predicted_words = [
+                hyp[0].text.split(" ") for hyp in predicted_tokens
+            ]
+
+        if stage != sb.Stage.TRAIN:
+            topk_hyps = [
+                [hyp.text for hyp in hyps] for hyps in predicted_tokens
+            ]
+            topk_scores = [
+                [hyp.score for hyp in hyps] for hyps in predicted_tokens
+            ]
+            topk_ids = [[ids[i] for _ in hyps] for i, hyps in enumerate(predicted_tokens)]
+
+            # Write decoding results to file
+            if if_main_process():
+                for hyp, score, hyp_id in zip(
+                    topk_hyps, topk_scores, topk_ids
+                ):
+                    for h, s, i in zip(hyp, score, hyp_id):
+                        self.topk_hyps.append(h)
+                        self.topk_scores.append(s)
+                        self.topk_ids.append(i)
 
         if stage != sb.Stage.TRAIN:
             target_words = [wrd.split(" ") for wrd in batch.wrd]
@@ -192,6 +197,19 @@ class ASR(sb.Brain):
                 test_stats=stage_stats,
             )
             if if_main_process():
+                global COUNTER
+                COUNTER += 1
+                if COUNTER == 0:
+                    file = self.hparams.dev_nbest_file
+                else:
+                    file = self.hparams.test_nbest_file 
+                with open(file, "w") as w:
+                    # write header
+                    w.write("id\tscore\thyp\n")
+                    for hyp, score, hyp_id in zip(
+                        self.topk_hyps, self.topk_scores, self.topk_ids
+                    ):
+                        w.write(f"{hyp_id}\t{score}\t{hyp}\n")
                 with open(self.hparams.test_wer_file, "w") as w:
                     self.wer_metric.write_stats(w)
 
