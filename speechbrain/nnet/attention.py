@@ -34,7 +34,7 @@ class MambaBlock(nn.Module):
             self.forward_blocks.append(
                 Block(
                     in_channels,
-                    mixer_cls=partial(Mamba, layer_idx=i, d_state=16, d_conv=4, expand=4),
+                    mixer_cls=partial(Mamba, layer_idx=i, d_state=16, d_conv=4, expand=2),
                     norm_cls=partial(RMSNorm, eps=1e-5),
                     fused_add_norm=False,
                 )
