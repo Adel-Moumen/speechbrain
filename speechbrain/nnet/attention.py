@@ -7,19 +7,57 @@ Authors
  * Samuele Cornell 2020
 """
 
-import logging
-import math
-from typing import Optional
-
-import numpy as np
 import torch
+import logging
 import torch.nn as nn
-import torch.nn.functional as F
-
+import numpy as np
+from typing import Optional
 from speechbrain.dataio.dataio import length_to_mask
+import torch.nn.functional as F
+import math
+
 
 logger = logging.getLogger(__name__)
 
+from functools import partial
+from mamba_ssm.modules.mamba_simple import Mamba, Block
+from mamba_ssm.models.mixer_seq_simple import _init_weights
+from mamba_ssm.ops.triton.layernorm import RMSNorm
+import torch.nn as nn 
+
+
+class MambaBlock(nn.Module):
+    def __init__(self, in_channels, n_layer=1, bidirectional=False):
+        super().__init__()
+        self.forward_blocks = nn.ModuleList([])
+        for i in range(n_layer):
+            self.forward_blocks.append(
+                Block(
+                    in_channels,
+                    mixer_cls=partial(Mamba, layer_idx=i, d_state=16, d_conv=4, expand=4),
+                    norm_cls=partial(RMSNorm, eps=1e-5),
+                    fused_add_norm=False,
+                )
+            )
+        self.apply(partial(_init_weights, n_layer=n_layer))
+
+    def forward(
+        self, 
+        query,
+        key,
+        value,
+        attn_mask: Optional[torch.Tensor] = None,
+        key_padding_mask: Optional[torch.Tensor] = None,
+        return_attn_weights: Optional[bool] = True,
+        pos_embs: Optional[torch.Tensor] = None,
+    ):      
+        for_residual = None
+        forward_f = query
+        for block in self.forward_blocks:
+            forward_f, for_residual = block(forward_f, for_residual, inference_params=None)
+        residual = (forward_f + for_residual) if for_residual is not None else forward_f
+
+        return residual, None
 
 class ContentBasedAttention(nn.Module):
     """This class implements content-based attention module for seq2seq
@@ -324,20 +362,9 @@ class KeyValueAttention(nn.Module):
 
 
 class RelPosEncXL(nn.Module):
-    """Relative positional encoding for the :class:`~RelPosMHAXL`.
+    """ """
 
-    Arguments
-    ---------
-    emb_dim : int
-        Size of the embedding, which controls the size of the last dimension
-        of the positional embedding as well
-    dtype : torch.dtype, optional
-        If unspecified, defaults to `torch.float32`. Controls the data type of
-        the output embedding (but does not affect the precision of the
-        computations, which remain `torch.float32`).
-    """
-
-    def __init__(self, emb_dim: int, dtype: torch.dtype = torch.float32):
+    def __init__(self, emb_dim):
         super().__init__()
         self.emb_dim = emb_dim
 
@@ -347,46 +374,29 @@ class RelPosEncXL(nn.Module):
         )
         self.register_buffer("inv_freq", inv_freq)
 
-        self.emb_dtype = dtype
-
-    @torch.no_grad()
-    def make_pe(self, seq_len: int):
+    def forward(self, x: torch.Tensor):
         """
-        Builds the positional embedding tensor for a given sequence length.
-
         Arguments
         ---------
-        seq_len : int
-            The length of the sequence to create the position embedding for.
+        x : torch.Tensor
+            input tensor with shape batch_size, seq_len, embed_dim
 
         Returns
         -------
-        torch.Tensor
-            Positional embedding tensor of shape `[1, 2*seq_len-1, embed_dim]`
+        pos_emb : torch.Tensor
         """
-
-        emb_dtype = self.emb_dtype
-        device = self.inv_freq.device
-
+        seq_len = x.size(1)
         with torch.no_grad():
-            # perform initialization with the same type as `inv_freq`, to enable
-            # migrating the embeddings to fp16 by calling
-            # `posenc.to(torch.float16)`
-
-            tot_pe = torch.empty(
-                (2, seq_len, self.emb_dim),
-                dtype=torch.float32,
-                device=device,
+            tot_pe = torch.zeros((2, seq_len, self.emb_dim), dtype=x.dtype).to(
+                x
             )
             pe_past = tot_pe[0]
             pe_future = tot_pe[1]
-            positions = torch.arange(
-                0,
-                seq_len,
-                dtype=torch.float32,
-                device=device,
-            ).unsqueeze(-1)
-
+            positions = (
+                torch.arange(0, seq_len, dtype=x.dtype, device=x.device)
+                .to(x)
+                .unsqueeze(-1)
+            )
             sinusoids = torch.sin(positions * self.inv_freq)
             pe_past[:, 0::2] = sinusoids
             pe_past[:, 1::2] = torch.cos(positions * self.inv_freq)
@@ -396,28 +406,8 @@ class RelPosEncXL(nn.Module):
             pe_past = torch.flip(pe_past, (0,)).unsqueeze(0)
             pe_future = pe_future[1:].unsqueeze(0)
             pe = torch.cat([pe_past, pe_future], dim=1)
-            pe = pe.to(emb_dtype)  # convert to type of module
-
-        return pe
-
-    def forward(self, x: torch.Tensor):
-        """
-        Builds the positional embedding tensor. Similar to
-        :meth:`~RelPosEncXL.make_pe` but uses the shape information from the
-        provided tensor.
-
-        Arguments
-        ---------
-        x : torch.Tensor
-            input tensor with shape batch_size, seq_len, embed_dim
-
-        Returns
-        -------
-        pos_emb : torch.Tensor
-            Positional embedding tensor of shape `[1, 2*seq_len-1, embed_dim]`
-        """
-
-        return self.make_pe(seq_len=x.size(1))
+            # pe is now 1, 2*seq_len, embed_dim
+            return pe
 
 
 class RelPosMHAXL(nn.Module):

@@ -168,6 +168,12 @@ class BranchformerEncoderLayer(nn.Module):
                 num_heads=nhead,
                 fix_tm_hidden_size=False,
             )
+        elif attention_type == "mamba":
+            import speechbrain as sb
+            self.mha_layer = sb.nnet.attention.MambaBlock(
+                d_model,
+                n_layer=1,
+            )
 
         self.convolution_branch = ConvolutionBranch(
             input_size=d_model,
