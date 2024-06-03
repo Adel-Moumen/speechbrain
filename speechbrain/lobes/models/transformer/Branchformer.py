@@ -9,15 +9,18 @@ Authors
 * Titouan Parcollet 2023
 """
 
-from typing import Optional
-
 import torch
 import torch.nn as nn
+from typing import Optional
+import numpy as np
 
-from speechbrain.lobes.models.convolution import ConvolutionalSpatialGatingUnit
-from speechbrain.nnet.attention import MultiheadAttention, RelPosMHAXL
-from speechbrain.nnet.hypermixing import HyperMixing
+
+from speechbrain.nnet.attention import RelPosMHAXL, MultiheadAttention
 from speechbrain.nnet.normalization import LayerNorm
+from speechbrain.lobes.models.convolution import ConvolutionalSpatialGatingUnit
+
+from speechbrain.nnet.hypermixing import HyperMixing
+from speechbrain.nnet.attention import Fastattention
 
 
 class ConvolutionBranch(nn.Module):
@@ -27,7 +30,7 @@ class ConvolutionBranch(nn.Module):
     LN -> Channel Proj -> GeLU -> (CNN Spatial Gating) -> Channel Proj -> Dropout
 
     Arguments
-    ---------
+    ----------
     input_size : int
         The expected size of the feature (channel) dimension.
     linear_units: int, optional
@@ -93,7 +96,7 @@ class BranchformerEncoderLayer(nn.Module):
     """This is an implementation of Branchformer encoder layer.
 
     Arguments
-    ---------
+    ----------
     d_model : int
         The expected size of the input embedding.
     nhead : int
@@ -109,7 +112,7 @@ class BranchformerEncoderLayer(nn.Module):
     dropout : int, optional
         Dropout for the encoder.
     attention_type: str, optional
-        type of attention layer, e.g. regularMHA for regular MultiHeadAttention.
+        type of attention layer, e.g. regulaMHA for regular MultiHeadAttention.
     csgu_linear_units: int, optional
         Number of neurons in the hidden linear units of the CSGU Module.
     gate_activation: torch.nn.Module, optional
@@ -141,6 +144,7 @@ class BranchformerEncoderLayer(nn.Module):
         csgu_linear_units=3072,
         gate_activation=nn.Identity,
         use_linear_after_conv=False,
+        bidirectional=False,
     ):
         super().__init__()
 
@@ -168,7 +172,20 @@ class BranchformerEncoderLayer(nn.Module):
                 num_heads=nhead,
                 fix_tm_hidden_size=False,
             )
-
+        elif attention_type == "fastattention":
+            self.mha_layer = Fastattention(
+                enc_dim=d_model,
+                nhead=nhead,
+                dropout=dropout,
+            )
+        elif attention_type == "mamba":
+            import speechbrain as sb
+            self.mha_layer = sb.nnet.attention.MambaBlock(
+                d_model,
+                n_layer=1,
+                bidirectional=bidirectional,
+            )
+            
         self.convolution_branch = ConvolutionBranch(
             input_size=d_model,
             kernel_size=kernel_size,
@@ -256,7 +273,7 @@ class BranchformerEncoder(nn.Module):
     dropout : int, optional
         Dropout for the encoder.
     attention_type: str, optional
-        type of attention layer, e.g. regularMHA for regular MultiHeadAttention.
+        type of attention layer, e.g. regulaMHA for regular MultiHeadAttention.
     csgu_linear_units: int, optional
         Number of neurons in the hidden linear units of the CSGU Module.
     gate_activation: torch.nn.Module, optional
@@ -290,6 +307,9 @@ class BranchformerEncoder(nn.Module):
         csgu_linear_units=3072,
         gate_activation=nn.Identity,
         use_linear_after_conv=False,
+        output_hidden_states=False,
+        layerdrop_prob=0.0,
+        bidirectional=False,
     ):
         super().__init__()
 
@@ -307,12 +327,16 @@ class BranchformerEncoder(nn.Module):
                     csgu_linear_units=csgu_linear_units,
                     gate_activation=gate_activation,
                     use_linear_after_conv=use_linear_after_conv,
+                    bidirectional=bidirectional,
                 )
                 for i in range(num_layers)
             ]
         )
         self.norm = LayerNorm(d_model, eps=1e-6)
         self.attention_type = attention_type
+        self.layerdrop_prob = layerdrop_prob
+        self.rng = np.random.default_rng()
+        self.output_hidden_states = output_hidden_states
 
     def forward(
         self,
@@ -347,15 +371,35 @@ class BranchformerEncoder(nn.Module):
                 )
 
         output = src
-        attention_lst = []
-        for enc_layer in self.layers:
-            output, attention = enc_layer(
-                output,
-                src_mask=src_mask,
-                src_key_padding_mask=src_key_padding_mask,
-                pos_embs=pos_embs,
-            )
-            attention_lst.append(attention)
-        output = self.norm(output)
+        if self.layerdrop_prob > 0.0:
+            keep_probs = self.rng.random(len(self.layers))
+            # print('probs: ', keep_probs)
+        else:
+            keep_probs = None
 
+        attention_lst = []
+        if self.output_hidden_states:
+            hidden_state_lst = [output]
+
+        for i, enc_layer in enumerate(self.layers):
+            if (
+                not self.training
+                or self.layerdrop_prob == 0.0
+                or keep_probs[i] > self.layerdrop_prob
+            ):
+                # print('going through layer: ', i)
+                output, attention = enc_layer(
+                    output,
+                    src_mask=src_mask,
+                    src_key_padding_mask=src_key_padding_mask,
+                    pos_embs=pos_embs,
+                )
+                attention_lst.append(attention)
+
+                if self.output_hidden_states:
+                    hidden_state_lst.append(output)
+        
+        output = self.norm(output)
+        if self.output_hidden_states:
+            return output, attention_lst, hidden_state_lst
         return output, attention_lst
