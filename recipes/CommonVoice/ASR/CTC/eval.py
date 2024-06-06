@@ -277,7 +277,10 @@ def dataio_prepare(hparams, tokenizer):
     )
 
     # We also sort the validation data so it is faster to validate
-    test_data = test_data.filtered_sorted(sort_key="duration")
+    test_data = test_data.filtered_sorted(
+        sort_key="duration",
+        key_max_value={"duration": hparams["avoid_if_longer_than_val_test"]},
+    )
 
     datasets = [train_data, valid_data, test_data]
 
