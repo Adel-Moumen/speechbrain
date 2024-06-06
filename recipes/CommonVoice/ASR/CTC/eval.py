@@ -269,7 +269,10 @@ def dataio_prepare(hparams, tokenizer):
         replacements={"data_root": data_folder},
     )
     # We also sort the validation data so it is faster to validate
-    valid_data = valid_data.filtered_sorted(sort_key="duration")
+    valid_data = valid_data.filtered_sorted(
+        sort_key="duration",
+        key_max_value={"duration": 60},
+    )
 
     test_data = sb.dataio.dataset.DynamicItemDataset.from_csv(
         csv_path=hparams["test_csv"],
@@ -279,7 +282,7 @@ def dataio_prepare(hparams, tokenizer):
     # We also sort the validation data so it is faster to validate
     test_data = test_data.filtered_sorted(
         sort_key="duration",
-        key_max_value={"duration": 30},
+        key_max_value={"duration": 60},
     )
 
     datasets = [train_data, valid_data, test_data]
