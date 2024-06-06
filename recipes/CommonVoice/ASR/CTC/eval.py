@@ -393,7 +393,7 @@ if __name__ == "__main__":
     asr_brain.evaluate(
         valid_data,
         min_key="WER",
-        test_loader_kwargs=hparams["test_dataloader_options"],
+        test_loader_kwargs=hparams["test_dataloader_opts"],
     )
 
     # Test
@@ -401,5 +401,5 @@ if __name__ == "__main__":
     asr_brain.evaluate(
         test_data,
         min_key="WER",
-        test_loader_kwargs=hparams["test_dataloader_options"],
+        test_loader_kwargs=hparams["test_dataloader_opts"],
     )
